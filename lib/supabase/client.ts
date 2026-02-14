@@ -1,21 +1,19 @@
 import { createBrowserClient } from '@supabase/ssr';
 
-// We use a singleton pattern to ensure we don't keep creating clients on every click
+// Use a simple let variable to cache the client instance
 let client: ReturnType<typeof createBrowserClient> | undefined;
 
 export function createClient() {
+  // If we already have a client, return it immediately
   if (client) return client;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // Next.js static replacement: It's best to use these directly 
+  // in the createBrowserClient call or assign them clearly like this:
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  // 🛡️ Safety check: If keys are missing, log a clear error instead of crashing
-  if (!url || !anonKey) {
-    console.error("Supabase environment variables are missing! Check your Vercel Dashboard.");
-    // Return a dummy client or handle gracefully to prevent the "reload loop"
-  }
+  // Initialize the client
+  client = createBrowserClient(url, anonKey);
 
-  client = createBrowserClient(url!, anonKey!);
-  
   return client;
 }
