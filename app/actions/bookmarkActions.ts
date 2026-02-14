@@ -2,22 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { query } from '@/lib/mysql';
-import { v4 as uuidv4 } from 'uuid';
 import { Bookmark, BookmarkInput } from '@/lib/types';
-import { createClient as createBrowserClient } from '@supabase/supabase-js';
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js';
 import { generateAIData } from '@/lib/ai';
-
-/* ---------------- SAFE JSON PARSER ---------------- */
-function safeParseTags(tags: any): string[] {
-  if (!tags) return [];
-  try {
-    const parsed = typeof tags === 'string' ? JSON.parse(tags) : tags;
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
 
 /* ---------------- AUTH HELPER ---------------- */
 async function getAuthenticatedUser() {
@@ -37,7 +24,8 @@ async function broadcastBookmarkEvent(
   event: 'bookmark_added' | 'bookmark_deleted',
   bookmark: Bookmark
 ) {
-  const supabase = createBrowserClient(
+  // Use Service Role key for server-side broadcasting
+  const supabase = createServiceRoleClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
@@ -52,103 +40,93 @@ async function broadcastBookmarkEvent(
 /* ---------------- GET BOOKMARKS ---------------- */
 export async function getBookmarks(searchQuery?: string, tagFilter?: string) {
   const user = await getAuthenticatedUser();
+  const supabase = await createClient();
 
-  let sql = 'SELECT * FROM bookmarks WHERE user_id = ?';
-  const params: any[] = [user.id];
+  let query = supabase
+    .from('bookmarks')
+    .select('*')
+    .eq('user_id', user.id);
 
   if (searchQuery?.trim()) {
-    sql += ' AND (title LIKE ? OR url LIKE ?)';
-    const pattern = `%${searchQuery}%`;
-    params.push(pattern, pattern);
+    query = query.or(`title.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
   }
 
   if (tagFilter?.trim()) {
-    sql += ' AND JSON_CONTAINS(tags, ?)';
-    params.push(JSON.stringify([tagFilter]));
+    query = query.contains('tags', [tagFilter]);
   }
 
-  sql += ' ORDER BY created_at DESC';
+  const { data, error } = await query.order('created_at', { ascending: false });
 
-  const bookmarks = await query<Bookmark[]>(sql, params);
+  if (error) {
+    console.error('Supabase Error:', error.message);
+    return [];
+  }
 
-  return bookmarks.map((b) => ({
-    ...b,
-    tags: safeParseTags(b.tags),
-  }));
+  return data as Bookmark[];
 }
 
-/* ---------------- ADD BOOKMARK (AI + DB IN SAME PLACE) ---------------- */
+/* ---------------- ADD BOOKMARK ---------------- */
 export async function addBookmark(input: BookmarkInput) {
   const user = await getAuthenticatedUser();
+  const supabase = await createClient();
 
   if (!input.title || !input.url) {
     throw new Error('Title and URL are required');
   }
 
-  try {
-    new URL(input.url);
-  } catch {
-    throw new Error('Invalid URL format');
-  }
-
-  const bookmarkId = uuidv4();
-
-  // ✅ AI GENERATION (HERE)
+  // AI GENERATION
   const aiData = await generateAIData(input.url, input.title);
 
-  // ✅ DATABASE INSERT (HERE)
-  await query(
-    'INSERT INTO bookmarks (id, user_id, title, url, summary, tags) VALUES (?, ?, ?, ?, ?, ?)',
-    [
-      bookmarkId,
-      user.id,
-      input.title,
-      input.url,
-      aiData.summary,
-      JSON.stringify(aiData.tags ?? []),
-    ]
-  );
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .insert([
+      {
+        user_id: user.id,
+        title: input.title,
+        url: input.url,
+        summary: aiData.summary,
+        tags: aiData.tags ?? [],
+      },
+    ])
+    .select()
+    .single();
 
-  const [bookmark] = await query<Bookmark[]>(
-    'SELECT * FROM bookmarks WHERE id = ?',
-    [bookmarkId]
-  );
+  if (error) throw new Error(error.message);
 
-  const bookmarkWithParsedTags = {
-    ...bookmark,
-    tags: safeParseTags(bookmark.tags),
-  };
+  const newBookmark = data as Bookmark;
 
-  await broadcastBookmarkEvent(user.id, 'bookmark_added', bookmarkWithParsedTags);
+  await broadcastBookmarkEvent(user.id, 'bookmark_added', newBookmark);
   revalidatePath('/dashboard');
 
-  return bookmarkWithParsedTags;
+  return newBookmark;
 }
 
 /* ---------------- DELETE BOOKMARK ---------------- */
 export async function deleteBookmark(bookmarkId: string) {
   const user = await getAuthenticatedUser();
+  const supabase = await createClient();
 
-  const [bookmark] = await query<Bookmark[]>(
-    'SELECT * FROM bookmarks WHERE id = ? AND user_id = ?',
-    [bookmarkId, user.id]
-  );
+  // First get the data for the broadcast before deleting
+  const { data: bookmark, error: fetchError } = await supabase
+    .from('bookmarks')
+    .select('*')
+    .eq('id', bookmarkId)
+    .eq('user_id', user.id)
+    .single();
 
-  if (!bookmark) {
+  if (fetchError || !bookmark) {
     throw new Error('Bookmark not found or unauthorized');
   }
 
-  await query(
-    'DELETE FROM bookmarks WHERE id = ? AND user_id = ?',
-    [bookmarkId, user.id]
-  );
+  const { error: deleteError } = await supabase
+    .from('bookmarks')
+    .delete()
+    .eq('id', bookmarkId)
+    .eq('user_id', user.id);
 
-  const bookmarkWithParsedTags = {
-    ...bookmark,
-    tags: safeParseTags(bookmark.tags),
-  };
+  if (deleteError) throw new Error(deleteError.message);
 
-  await broadcastBookmarkEvent(user.id, 'bookmark_deleted', bookmarkWithParsedTags);
+  await broadcastBookmarkEvent(user.id, 'bookmark_deleted', bookmark as Bookmark);
   revalidatePath('/dashboard');
 
   return { success: true };
@@ -157,17 +135,21 @@ export async function deleteBookmark(bookmarkId: string) {
 /* ---------------- GET ALL TAGS ---------------- */
 export async function getAllTags() {
   const user = await getAuthenticatedUser();
+  const supabase = await createClient();
 
-  const bookmarks = await query<Bookmark[]>(
-    'SELECT tags FROM bookmarks WHERE user_id = ? AND tags IS NOT NULL',
-    [user.id]
-  );
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .select('tags')
+    .eq('user_id', user.id);
+
+  if (error) return [];
 
   const allTags = new Set<string>();
-
-  bookmarks.forEach((b) =>
-    safeParseTags(b.tags).forEach((t) => allTags.add(t))
-  );
+  data.forEach((row) => {
+    if (Array.isArray(row.tags)) {
+      row.tags.forEach((t: string) => allTags.add(t));
+    }
+  });
 
   return Array.from(allTags).sort();
 }

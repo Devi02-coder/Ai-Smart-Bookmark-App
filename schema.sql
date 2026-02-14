@@ -1,44 +1,30 @@
--- Create database
-CREATE DATABASE IF NOT EXISTS bookmark_app;
-USE bookmark_app;
-
--- Create bookmarks table
+-- 1. Create the bookmarks table (PostgreSQL syntax)
 CREATE TABLE IF NOT EXISTS bookmarks (
-  id CHAR(36) PRIMARY KEY,
-  user_id CHAR(36) NOT NULL,
-  title VARCHAR(255) NOT NULL,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  title TEXT NOT NULL,
   url TEXT NOT NULL,
   summary TEXT,
-  tags JSON,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  
-  INDEX idx_user_id (user_id),
-  INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  tags JSONB DEFAULT '[]'::jsonb, -- Using JSONB for better performance
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
--- Example queries for reference:
+  -- Foreign key reference to Supabase Auth users (optional but recommended)
+  CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+);
 
--- Insert bookmark
--- INSERT INTO bookmarks (id, user_id, title, url, summary, tags)
--- VALUES (UUID(), ?, ?, ?, ?, ?);
+-- 2. Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_user_id ON bookmarks(user_id);
+CREATE INDEX IF NOT EXISTS idx_created_at ON bookmarks(created_at);
 
--- Select user bookmarks
--- SELECT * FROM bookmarks
--- WHERE user_id = ?
--- ORDER BY created_at DESC;
+-- 3. Enable Row Level Security (RLS)
+-- This ensures users can only see their own bookmarks
+ALTER TABLE bookmarks ENABLE ROW LEVEL SECURITY;
 
--- Delete bookmark
--- DELETE FROM bookmarks
--- WHERE id = ? AND user_id = ?;
+CREATE POLICY "Users can manage their own bookmarks" 
+ON bookmarks FOR ALL 
+TO authenticated 
+USING (auth.uid() = user_id);
 
--- Search bookmarks
--- SELECT * FROM bookmarks
--- WHERE user_id = ?
--- AND (title LIKE ? OR url LIKE ?)
--- ORDER BY created_at DESC;
-
--- Filter by tag
--- SELECT * FROM bookmarks
--- WHERE user_id = ?
--- AND JSON_CONTAINS(tags, '"ai"')
--- ORDER BY created_at DESC;
+-- 4. Enable Realtime
+-- This allows the BookmarkList.tsx to see updates instantly
+ALTER PUBLICATION supabase_realtime ADD TABLE bookmarks;

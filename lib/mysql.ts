@@ -1,27 +1,20 @@
-import mysql from 'mysql2/promise';
+// lib/mysql.ts
 
-let pool: mysql.Pool | null = null;
+/**
+ * ⚠️ ATTENTION:
+ * MySQL is disabled to prevent "ECONNREFUSED 127.0.0.1:3306" errors on Vercel.
+ * All database operations have been moved to Supabase.
+ * This file now acts as a safe placeholder.
+ */
 
 export function getPool() {
-  if (!pool) {
-    pool = mysql.createPool({
-      host: process.env.MYSQL_HOST || 'localhost',
-      port: parseInt(process.env.MYSQL_PORT || '3306'),
-      user: process.env.MYSQL_USER || 'root',
-      password: process.env.MYSQL_PASSWORD || '2003',
-      database: process.env.MYSQL_DATABASE || 'bookmark_app',
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
-    });
-  }
-  return pool;
+  // Return null because we are no longer using a MySQL pool
+  return null;
 }
 
 export async function query<T = any>(sql: string, params?: any[]): Promise<T> {
-  const pool = getPool();
-  const [rows] = await pool.execute(sql, params);
-  return rows as T;
+  // This function is now a placeholder. 
+  // If anything still calls it, it will return an empty array instead of crashing.
+  console.warn('⚠️ A MySQL query was attempted, but MySQL is disabled. Switch to Supabase actions.');
+  return [] as unknown as T;
 }
