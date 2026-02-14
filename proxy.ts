@@ -2,12 +2,12 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
-  // 1. Create an initial response
+  // 1. Start with a neutral response
   let supabaseResponse = NextResponse.next({
     request,
   });
 
-  // 2. Initialize Supabase with proper Next.js 16 cookie handling
+  // 2. Initialize Supabase with Next.js 16 SSR handling
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -17,17 +17,16 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          // Update request cookies for the current execution
+          // Update the request so the rest of the middleware "sees" the new session
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           
-          // Refresh the response object with the updated request
+          // Re-sync the response so the browser gets the cookies
           supabaseResponse = NextResponse.next({
             request,
           });
 
-          // Set the cookies on the final response going to the browser
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -36,24 +35,33 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // 3. IMPORTANT: Get the user. 
-  // This triggers the 'setAll' function above if the session needs refreshing.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // 3. IMPORTANT: This refreshes the session if needed
+  const { data: { user } } = await supabase.auth.getUser();
 
   const url = request.nextUrl.clone();
 
-  // 🛡️ Protected routes: If not logged in and trying to access dashboard
+  // 🛡️ AUTH LOGIC: Redirect based on user state
+  
+  // If no user and trying to access dashboard -> Send to Home
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     url.pathname = '/';
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    // CRITICAL: Copy cookies to the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectResponse;
   }
 
-  // 🚀 Auth routes: If logged in and trying to access home page
+  // If user is logged in and visits home -> Send to Dashboard
   if (user && request.nextUrl.pathname === '/') {
     url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    // CRITICAL: Copy cookies to the redirect response
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, cookie.value);
+    });
+    return redirectResponse;
   }
 
   return supabaseResponse;
@@ -62,11 +70,7 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files (svg, png, etc)
+     * Match all paths except static assets and icons
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

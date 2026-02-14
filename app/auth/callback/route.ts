@@ -9,22 +9,21 @@ export async function GET(request: Request) {
   if (code) {
     const supabase = await createClient();
     
-    // 4. Exchange code for session
+    // Exchange the temporary code for a permanent session
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error) {
-      // ✅ Success: Go to dashboard
-      return NextResponse.redirect(`${origin}${next}`);
+      // ✅ SUCCESS: Construct an absolute URL to ensure we stay on HTTPS
+      const forwardTo = new URL(next, origin);
+      return NextResponse.redirect(forwardTo);
     }
 
-    // ❌ Log the error so you can see it in Vercel "Runtime Logs"
+    // ❌ Log the actual Supabase error to your Vercel Logs
     console.error('Supabase Auth Error:', error.message);
   }
 
-  /**
-   * ❌ FAILURE FIX: 
-   * Instead of going to /auth/auth-code-error (which causes a 404),
-   * we send them back to the home page with an error message in the URL.
-   */
-  return NextResponse.redirect(`${origin}/?error=auth_exchange_failed`);
+  // 🛡️ FAILURE: Return to home with a clean URL and error param
+  const errorUrl = new URL('/', origin);
+  errorUrl.searchParams.set('error', 'auth_exchange_failed');
+  return NextResponse.redirect(errorUrl);
 }
