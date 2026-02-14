@@ -24,7 +24,7 @@ async function broadcastBookmarkEvent(
   event: 'bookmark_added' | 'bookmark_deleted',
   bookmark: Bookmark
 ) {
-  // Use Service Role key for server-side broadcasting
+  // Use Service Role key for server-side broadcasting to bypass RLS for the broadcast
   const supabase = createServiceRoleClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -39,30 +39,33 @@ async function broadcastBookmarkEvent(
 
 /* ---------------- GET BOOKMARKS ---------------- */
 export async function getBookmarks(searchQuery?: string, tagFilter?: string) {
-  const user = await getAuthenticatedUser();
-  const supabase = await createClient();
+  try {
+    const user = await getAuthenticatedUser();
+    const supabase = await createClient();
 
-  let query = supabase
-    .from('bookmarks')
-    .select('*')
-    .eq('user_id', user.id);
+    let query = supabase
+      .from('bookmarks')
+      .select('*')
+      .eq('user_id', user.id);
 
-  if (searchQuery?.trim()) {
-    query = query.or(`title.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
-  }
+    if (searchQuery?.trim()) {
+      // Postgres ILIKE for case-insensitive search
+      query = query.or(`title.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
+    }
 
-  if (tagFilter?.trim()) {
-    query = query.contains('tags', [tagFilter]);
-  }
+    if (tagFilter?.trim()) {
+      // jsonb_contains equivalent for tags array
+      query = query.contains('tags', [tagFilter]);
+    }
 
-  const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await query.order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Supabase Error:', error.message);
+    if (error) throw error;
+    return data as Bookmark[];
+  } catch (err) {
+    console.error('Get Bookmarks Error:', err);
     return [];
   }
-
-  return data as Bookmark[];
 }
 
 /* ---------------- ADD BOOKMARK ---------------- */
@@ -74,8 +77,13 @@ export async function addBookmark(input: BookmarkInput) {
     throw new Error('Title and URL are required');
   }
 
-  // AI GENERATION
-  const aiData = await generateAIData(input.url, input.title);
+  // AI GENERATION (Wrapped in try/catch so failure doesn't stop the save)
+  let aiData = { summary: '', tags: [] as string[] };
+  try {
+    aiData = await generateAIData(input.url, input.title);
+  } catch (aiErr) {
+    console.warn('AI Processing failed, saving without AI data:', aiErr);
+  }
 
   const { data, error } = await supabase
     .from('bookmarks')
@@ -84,8 +92,8 @@ export async function addBookmark(input: BookmarkInput) {
         user_id: user.id,
         title: input.title,
         url: input.url,
-        summary: aiData.summary,
-        tags: aiData.tags ?? [],
+        summary: aiData.summary || '',
+        tags: aiData.tags || [],
       },
     ])
     .select()
@@ -95,9 +103,10 @@ export async function addBookmark(input: BookmarkInput) {
 
   const newBookmark = data as Bookmark;
 
+  // Trigger realtime update for other tabs
   await broadcastBookmarkEvent(user.id, 'bookmark_added', newBookmark);
+  
   revalidatePath('/dashboard');
-
   return newBookmark;
 }
 
@@ -106,7 +115,7 @@ export async function deleteBookmark(bookmarkId: string) {
   const user = await getAuthenticatedUser();
   const supabase = await createClient();
 
-  // First get the data for the broadcast before deleting
+  // 1. Fetch data for broadcast before it's gone
   const { data: bookmark, error: fetchError } = await supabase
     .from('bookmarks')
     .select('*')
@@ -118,6 +127,7 @@ export async function deleteBookmark(bookmarkId: string) {
     throw new Error('Bookmark not found or unauthorized');
   }
 
+  // 2. Perform deletion
   const { error: deleteError } = await supabase
     .from('bookmarks')
     .delete()
@@ -126,30 +136,36 @@ export async function deleteBookmark(bookmarkId: string) {
 
   if (deleteError) throw new Error(deleteError.message);
 
+  // 3. Broadcast to other tabs
   await broadcastBookmarkEvent(user.id, 'bookmark_deleted', bookmark as Bookmark);
+  
   revalidatePath('/dashboard');
-
   return { success: true };
 }
 
 /* ---------------- GET ALL TAGS ---------------- */
 export async function getAllTags() {
-  const user = await getAuthenticatedUser();
-  const supabase = await createClient();
+  try {
+    const user = await getAuthenticatedUser();
+    const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('bookmarks')
-    .select('tags')
-    .eq('user_id', user.id);
+    const { data, error } = await supabase
+      .from('bookmarks')
+      .select('tags')
+      .eq('user_id', user.id);
 
-  if (error) return [];
+    if (error) throw error;
 
-  const allTags = new Set<string>();
-  data.forEach((row) => {
-    if (Array.isArray(row.tags)) {
-      row.tags.forEach((t: string) => allTags.add(t));
-    }
-  });
+    const allTags = new Set<string>();
+    data.forEach((row) => {
+      if (Array.isArray(row.tags)) {
+        row.tags.forEach((t: string) => allTags.add(t));
+      }
+    });
 
-  return Array.from(allTags).sort();
+    return Array.from(allTags).sort();
+  } catch (err) {
+    console.error('Get Tags Error:', err);
+    return [];
+  }
 }
