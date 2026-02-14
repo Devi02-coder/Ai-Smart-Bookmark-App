@@ -28,3 +28,16 @@ USING (auth.uid() = user_id);
 -- 4. Enable Realtime
 -- This allows the BookmarkList.tsx to see updates instantly
 ALTER PUBLICATION supabase_realtime ADD TABLE bookmarks;
+
+-- 1. Add the summary column as Text
+ALTER TABLE bookmarks 
+ADD COLUMN IF NOT EXISTS summary TEXT;
+
+-- 2. Add the tags column as JSONB (Standard for PostgreSQL arrays/objects)
+-- We set it to default to an empty array []
+ALTER TABLE bookmarks 
+ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
+
+-- 3. Add the created_at column with the current timestamp
+ALTER TABLE bookmarks 
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT now();
