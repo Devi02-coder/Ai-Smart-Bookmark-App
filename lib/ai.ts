@@ -13,18 +13,19 @@ export interface AIResult {
   tags: string[];
 }
 
-// Create OpenAI client only if key exists
+// ✅ Initialize as OpenAI instance or null (cleaner than empty string)
 const openai =
-  process.env.OPENAI_API_KEY &&
-  new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  process.env.OPENAI_API_KEY
+    ? new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      })
+    : null;
 
 export async function generateAIData(
   url: string,
   title: string
 ): Promise<AIResult> {
-  // ✅ Use real AI if API key exists
+  // Use real AI if the client exists
   if (openai) {
     try {
       return await generateWithOpenAI(url, title);
@@ -33,7 +34,7 @@ export async function generateAIData(
     }
   }
 
-  // ✅ Fallback to mock AI (always works)
+  // Fallback to mock AI (always works)
   return generateWithMockAI(url, title);
 }
 
@@ -45,6 +46,11 @@ async function generateWithOpenAI(
   url: string,
   title: string
 ): Promise<AIResult> {
+  // ✅ FIX: Type Guard. This tells TS that 'openai' is definitely the OpenAI object below this line.
+  if (!openai || typeof openai === 'string') {
+    throw new Error('OpenAI client is not properly initialized');
+  }
+
   const prompt = `
 Summarize the following webpage in 2–3 short sentences.
 Then generate 3–5 relevant tags.
@@ -59,7 +65,7 @@ Title: ${title}
 URL: ${url}
 `;
 
-  const response = await openai!.chat.completions.create({
+  const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
@@ -71,12 +77,16 @@ URL: ${url}
     throw new Error('Empty OpenAI response');
   }
 
-  const parsed = JSON.parse(content);
-
-  return {
-    summary: String(parsed.summary || ''),
-    tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 5) : [],
-  };
+  try {
+    const parsed = JSON.parse(content);
+    return {
+      summary: String(parsed.summary || ''),
+      tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 5) : [],
+    };
+  } catch (e) {
+    console.error('AI JSON parsing failed:', e);
+    throw new Error('Invalid JSON from AI');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -87,11 +97,10 @@ async function generateWithMockAI(
   url: string,
   title: string
 ): Promise<AIResult> {
-  // Simulate AI delay
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   return {
-    summary: generateSummaryFromTitle(title),
+    summary: `This bookmark is a useful reference about "${title}".`,
     tags: generateTagsFromUrl(url, title),
   };
 }
@@ -100,31 +109,15 @@ function generateTagsFromUrl(url: string, title: string): string[] {
   const tags: string[] = [];
   const text = (url + ' ' + title).toLowerCase();
 
-  // Technology
   if (/github|code|programming|dev/.test(text)) tags.push('development');
   if (/react|vue|angular|next/.test(text)) tags.push('frontend');
   if (/node|python|java|go/.test(text)) tags.push('backend');
   if (/ai|ml|machine learning|neural/.test(text)) tags.push('ai');
   if (/design|figma|ux|ui/.test(text)) tags.push('design');
 
-  // Content type
-  if (/article|blog|post/.test(text)) tags.push('article');
-  if (/video|youtube|watch/.test(text)) tags.push('video');
-  if (/doc|documentation|guide/.test(text)) tags.push('documentation');
-  if (/tutorial|learn|course/.test(text)) tags.push('tutorial');
-
-  // Domain
   if (url.includes('youtube.com')) tags.push('youtube');
   if (url.includes('github.com')) tags.push('github');
-  if (url.includes('stackoverflow.com')) tags.push('stackoverflow');
-  if (url.includes('medium.com')) tags.push('medium');
-  if (url.includes('dev.to')) tags.push('devto');
 
   if (tags.length === 0) tags.push('general');
-
   return [...new Set(tags)].slice(0, 5);
-}
-
-function generateSummaryFromTitle(title: string): string {
-  return `This bookmark is a useful reference about "${title}".`;
 }
