@@ -144,9 +144,10 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
                     </p>
                   )}
 
-                  {bookmark.tags?.length > 0 && (
+                  {/* ✅ FIX: Safeguard against undefined tags using Nullish Coalescing */}
+                  {(bookmark.tags ?? []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {bookmark.tags.map((tag) => (
+                      {bookmark.tags?.map((tag) => (
                         <span
                           key={tag}
                           onClick={() => setSelectedTag(tag)}
