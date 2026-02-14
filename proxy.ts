@@ -1,7 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+// ✅ Next.js 16: Export must be named 'proxy'
+export async function proxy(request: NextRequest) {
   const url = request.nextUrl.clone();
 
   // 1. EMERGENCY BYPASS: Let auth traffic through without interference
@@ -46,7 +47,7 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // 3. IMPORTANT: Use getUser() to verify the session
+  // 3. Verify the session
   const { data: { user } } = await supabase.auth.getUser();
 
   // 🛡️ AUTH REDIRECT LOGIC
@@ -55,9 +56,9 @@ export async function middleware(request: NextRequest) {
   if (!user && url.pathname.startsWith('/dashboard')) {
     url.pathname = '/';
     const response = NextResponse.redirect(url);
-    // Copy all cookies (including the logic that cleared the session) to the redirect
+    // Copy all cookies to the redirect
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-        response.cookies.set(cookie.name, cookie.value);
+        response.cookies.set(cookie.name, cookie.value, cookie.options);
     });
     return response;
   }
@@ -66,9 +67,9 @@ export async function middleware(request: NextRequest) {
   if (user && url.pathname === '/') {
     url.pathname = '/dashboard';
     const response = NextResponse.redirect(url);
-    // CRITICAL: Copy the new auth cookies to the redirect response
+    // CRITICAL: Copy auth cookies to the redirect response
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-        response.cookies.set(cookie.name, cookie.value);
+        response.cookies.set(cookie.name, cookie.value, cookie.options);
     });
     return response;
   }
@@ -78,7 +79,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Apply middleware to all routes except static files
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
