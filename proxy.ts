@@ -1,30 +1,36 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-// ✅ NEXT.JS 16 CONVENTION: Export must be named 'proxy' or be default
-export default async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
 
-  // 1. AUTH BYPASS: Let Supabase auth traffic through
+  // 1. AUTH BYPASS: Let static files and auth-specific routes pass through immediately
   if (
     url.pathname.startsWith('/auth') || 
-    url.searchParams.has('code') || 
-    url.searchParams.has('error')
+    url.searchParams.has('code')
   ) {
     return NextResponse.next();
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  // Create an initial response
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
 
+  // 2. INITIALIZE SUPABASE
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll(); },
+        getAll() {
+          return request.cookies.getAll();
+        },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({
+            request,
+          });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -33,28 +39,29 @@ export default async function proxy(request: NextRequest) {
     }
   );
 
+  // IMPORTANT: Use getUser() not getSession() for security
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 🛡️ REDIRECT LOGIC
+  // 3. PROTECT ROUTES
   
-  // Case A: If no user and on dashboard -> Go Home
+  // Case A: User is NOT logged in but trying to access dashboard
   if (!user && url.pathname.startsWith('/dashboard')) {
-    url.pathname = '/';
-    const response = NextResponse.redirect(url);
-    // ✅ FIX: Pass the cookie object directly to avoid the '.options' type error
+    const redirectUrl = new URL('/', request.url);
+    const response = NextResponse.redirect(redirectUrl);
+    // Copy cookies from the supabaseResponse to the redirect response
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-      response.cookies.set(cookie);
+        response.cookies.set(cookie.name, cookie.value, cookie);
     });
     return response;
   }
 
-  // Case B: If user exists and on home -> Go Dashboard
+  // Case B: User IS logged in but trying to access the landing/login page
   if (user && url.pathname === '/') {
-    url.pathname = '/dashboard';
-    const response = NextResponse.redirect(url);
-    // ✅ FIX: Pass the cookie object directly to avoid the '.options' type error
+    const redirectUrl = new URL('/dashboard', request.url);
+    const response = NextResponse.redirect(redirectUrl);
+    // Copy cookies from the supabaseResponse to the redirect response
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-      response.cookies.set(cookie);
+        response.cookies.set(cookie.name, cookie.value, cookie);
     });
     return response;
   }
@@ -63,5 +70,13 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };
