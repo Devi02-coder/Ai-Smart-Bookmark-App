@@ -4,8 +4,14 @@ export interface Bookmark {
   title: string;
   url: string;
   summary: string | null;
-  tags: string[] | null;
-  created_at: Date | string;
+  /** * tags are stored as JSONB in Supabase. 
+   * We default to an empty array to prevent .map() errors in the UI.
+   */
+  tags: string[] | null; 
+  /**
+   * Supabase returns dates as ISO strings (e.g., "2024-02-14T...")
+   */
+  created_at: string; 
 }
 
 export interface BookmarkInput {
@@ -13,7 +19,10 @@ export interface BookmarkInput {
   url: string;
 }
 
+/**
+ * Matches the payload structure for Supabase Realtime broadcasts
+ */
 export interface RealtimeBookmarkEvent {
-  type: 'bookmark_added' | 'bookmark_deleted';
-  bookmark: Bookmark;
+  event: 'bookmark_added' | 'bookmark_deleted';
+  payload: Bookmark;
 }
