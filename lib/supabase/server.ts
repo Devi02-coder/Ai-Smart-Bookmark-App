@@ -2,7 +2,6 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 export async function createClient() {
-  // In Next.js 16, cookies() is asynchronous
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -14,16 +13,18 @@ export async function createClient() {
           return cookieStore.getAll();
         },
         /**
-         * ✅ FIX: Explicitly type 'cookiesToSet' to satisfy strict mode.
-         * This uses the CookieOptions type we imported above.
+         * ✅ Fixed: 'setAll' is the modern standard for @supabase/ssr.
+         * We wrap the .set in a try-catch because Next.js will throw an error 
+         * if you try to set cookies inside a Server Component that is already rendering.
          */
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+        setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {
-            // This can be ignored if you have a proxy refreshing sessions.
+          } catch (error) {
+            // The 'setAll' method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing sessions.
           }
         },
       },
