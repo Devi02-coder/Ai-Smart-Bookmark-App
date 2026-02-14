@@ -32,7 +32,8 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
 
     const channel = supabase
       .channel(`bookmarks:${userId}`)
-      .on('broadcast', { event: 'bookmark_added' }, ({ payload }) => {
+      // ✅ FIX: Added : any to the payload destructured arguments
+      .on('broadcast', { event: 'bookmark_added' }, ({ payload }: { payload: any }) => {
         if (!payload?.id) return;
 
         setBookmarks((prev) => [
@@ -40,7 +41,8 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
           ...prev.filter((b) => b?.id !== payload.id),
         ]);
       })
-      .on('broadcast', { event: 'bookmark_deleted' }, ({ payload }) => {
+      // ✅ FIX: Added : any to the payload destructured arguments
+      .on('broadcast', { event: 'bookmark_deleted' }, ({ payload }: { payload: any }) => {
         if (!payload?.id) return;
 
         setBookmarks((prev) => prev.filter((b) => b?.id !== payload.id));
@@ -83,7 +85,6 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
 
   return (
     <div className="space-y-6">
-      {/* Search + Filter */}
       <div className="bg-white rounded-xl p-6 border">
         <div className="grid md:grid-cols-2 gap-4">
           <input
@@ -113,7 +114,6 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
         Your Bookmarks ({filteredBookmarks.length})
       </h2>
 
-      {/* Bookmark List */}
       {filteredBookmarks.length === 0 ? (
         <p className="text-gray-500 text-center py-12">
           No bookmarks found
@@ -137,14 +137,12 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
                     {bookmark.url}
                   </a>
 
-                  {/* ✅ AI SUMMARY (SAFE) */}
                   {bookmark.summary && (
                     <p className="mt-2 text-sm text-gray-600">
                       {bookmark.summary}
                     </p>
                   )}
 
-                  {/* ✅ FIX: Safeguard against undefined tags using Nullish Coalescing */}
                   {(bookmark.tags ?? []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {bookmark.tags?.map((tag) => (
