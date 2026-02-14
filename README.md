@@ -4,7 +4,7 @@ A production-ready, real-time bookmark manager with AI-powered tagging, Google O
 
 ## 🚀 Live Demo
 
-**Deployed URL:** [Your Vercel URL here after deployment]
+**Deployed URL:** [(https://ai-smart-bookmark-app.vercel.app/)]
 
 ---
 
@@ -179,7 +179,7 @@ MYSQL_PASSWORD=2003
 MYSQL_DATABASE=bookmark_app
 
 # App URL
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_SITE_URL=https://ai-smart-bookmark-app.vercel.app
 ```
 
 4. **Set up the database** (see Database Setup below)
@@ -303,7 +303,7 @@ git push -u origin main
 4. Configure environment variables:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://wvroarvlipfmavoiayje.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
@@ -313,7 +313,7 @@ MYSQL_USER=your_mysql_user
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_DATABASE=bookmark_app
 
-NEXT_PUBLIC_SITE_URL=https://your-app.vercel.app
+NEXT_PUBLIC_SITE_URL=https:https://ai-smart-bookmark-app.vercel.app
 ```
 
 5. Click "Deploy"
@@ -322,7 +322,7 @@ NEXT_PUBLIC_SITE_URL=https://your-app.vercel.app
 
 Add your Vercel URL to Google OAuth:
 ```
-https://your-app.vercel.app/auth/callback
+https://ai-smart-bookmark-app.vercel.app/auth/callback
 ```
 
 ### 4. Production Database Options
