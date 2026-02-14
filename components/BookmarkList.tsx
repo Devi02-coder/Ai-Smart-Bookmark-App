@@ -32,7 +32,7 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
 
     const channel = supabase
       .channel(`bookmarks:${userId}`)
-      // ✅ FIX: Added : any to the payload destructured arguments
+      // ✅ Added explicit type for payload to prevent Vercel build errors
       .on('broadcast', { event: 'bookmark_added' }, ({ payload }: { payload: any }) => {
         if (!payload?.id) return;
 
@@ -41,7 +41,7 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
           ...prev.filter((b) => b?.id !== payload.id),
         ]);
       })
-      // ✅ FIX: Added : any to the payload destructured arguments
+      // ✅ Added explicit type for payload to prevent Vercel build errors
       .on('broadcast', { event: 'bookmark_deleted' }, ({ payload }: { payload: any }) => {
         if (!payload?.id) return;
 
@@ -78,7 +78,7 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
         b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         b.url.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesTag = !selectedTag || b.tags?.includes(selectedTag);
+      const matchesTag = !selectedTag || (b.tags && b.tags.includes(selectedTag));
 
       return matchesSearch && matchesTag;
     });
@@ -92,13 +92,13 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
             placeholder="Search by title or URL..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-4 py-2 border rounded-lg"
+            className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
           />
 
           <select
             value={selectedTag}
             onChange={(e) => setSelectedTag(e.target.value)}
-            className="px-4 py-2 border rounded-lg bg-white"
+            className="px-4 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
           >
             <option value="">All Tags</option>
             {allTags.map((tag) => (
@@ -121,10 +121,10 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
       ) : (
         <div className="grid gap-4">
           {filteredBookmarks.map((bookmark) => (
-            <div key={bookmark.id} className="bg-white rounded-xl p-6 border">
+            <div key={bookmark.id} className="bg-white rounded-xl p-6 border hover:shadow-md transition-shadow">
               <div className="flex justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate">
+                  <h3 className="font-semibold truncate text-lg">
                     {bookmark.title}
                   </h3>
 
@@ -132,7 +132,7 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
                     href={bookmark.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 text-sm break-all"
+                    className="text-blue-600 text-sm break-all hover:underline"
                   >
                     {bookmark.url}
                   </a>
@@ -144,12 +144,12 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
                   )}
 
                   {(bookmark.tags ?? []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       {bookmark.tags?.map((tag) => (
                         <span
                           key={tag}
                           onClick={() => setSelectedTag(tag)}
-                          className="px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full cursor-pointer"
+                          className="px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full cursor-pointer hover:bg-blue-100"
                         >
                           {tag}
                         </span>
@@ -161,7 +161,7 @@ export function BookmarkList({ initialBookmarks, userId }: BookmarkListProps) {
                 <button
                   onClick={() => handleDelete(bookmark.id)}
                   disabled={deleting === bookmark.id}
-                  className="text-red-600 disabled:opacity-50"
+                  className="text-red-600 hover:text-red-800 disabled:opacity-50 text-sm font-medium self-start"
                 >
                   {deleting === bookmark.id ? 'Deleting...' : 'Delete'}
                 </button>
